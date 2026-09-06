@@ -5,6 +5,7 @@ import { ProviderPluginManager } from './plugins/manager.js'
 import { loadProvidersConfig } from './plugins/loader.js'
 import type { ProvidersConfig } from './plugins/types.js'
 import {
+  addBlockedDiagnostic,
   addPlayableFilterDiagnostic,
   filterPlayableSources,
 } from './playability/filter.js'
@@ -194,6 +195,10 @@ function registerOmssAlignments(app: FastifyInstance, manager: ProviderPluginMan
             'Filtered',
           )
         }
+        body.diagnostics = addBlockedDiagnostic(
+          Array.isArray(body.diagnostics) ? body.diagnostics : [],
+          filtered.blocked,
+        )
         done(null, JSON.stringify(body))
       })
       .catch(() => {

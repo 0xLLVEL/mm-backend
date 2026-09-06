@@ -1,6 +1,7 @@
 import type { BaseProvider, ProviderRegistry, ProviderMediaObject, ProviderResult } from '@omss/framework'
 import { loadProviders, loadProvidersConfig, setProviderEnabled } from './loader.js'
 import {
+  addBlockedDiagnostic,
   addPlayableFilterDiagnostic,
   defaultProbeOrigin,
   filterPlayableSources,
@@ -118,11 +119,14 @@ export class ProviderPluginManager {
       return {
         ...result,
         sources: filtered.sources as ProviderResult['sources'],
-        diagnostics: addPlayableFilterDiagnostic(
-          Array.isArray(result?.diagnostics) ? result.diagnostics : [],
-          filtered.removed,
-          'PROVIDER_UNPLAYABLE_SOURCE_FILTERED',
-          `${provider.name}: filtered`,
+        diagnostics: addBlockedDiagnostic(
+          addPlayableFilterDiagnostic(
+            Array.isArray(result?.diagnostics) ? result.diagnostics : [],
+            filtered.removed,
+            'PROVIDER_UNPLAYABLE_SOURCE_FILTERED',
+            `${provider.name}: filtered`,
+          ),
+          filtered.blocked,
         ) as ProviderResult['diagnostics'],
       }
     }
