@@ -78,8 +78,10 @@ export class VidLinkProvider extends BaseProvider {
     ).replace(/\/$/, '')
     this.timeoutMs =
       config.timeoutMs ?? Number(process.env.VIDLINK_TIMEOUT_MS ?? 18_000)
+    // ponytail: default 2 — BunnyCDN per-IP throttles this zone hard;
+    // fewer qualities = fewer probe+playback hits per sources call
     this.maxStreams =
-      config.maxStreams ?? Number(process.env.VIDLINK_MAX_STREAMS ?? 4)
+      config.maxStreams ?? Number(process.env.VIDLINK_MAX_STREAMS ?? 2)
 
     this.HEADERS = {
       'User-Agent': DEFAULT_UA,

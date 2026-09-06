@@ -189,6 +189,16 @@ export function registerFixedProxy(app: FastifyInstance): void {
         if (retryAfter && (upstream.status === 429 || upstream.status === 503)) {
           reply.header('Retry-After', retryAfter)
         }
+        if (upstream.status === 429 || upstream.status === 503) {
+          try {
+            request.log.warn(
+              { upstreamHost: new URL(upstreamUrl).hostname, status: upstream.status },
+              'proxy upstream rate-limited after retry',
+            )
+          } catch {
+            /* ignore */
+          }
+        }
 
         const nodeStream = Readable.fromWeb(upstream.body as import('stream/web').ReadableStream)
         bindProxyStreamLifetime(request, nodeStream)
