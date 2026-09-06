@@ -82,12 +82,35 @@ export function registerFixedProxy(app: FastifyInstance): void {
 
       try {
         const upstreamUrl = unwrapProxyTargetUrl(payload.url)
-        const upstream = await fetch(upstreamUrl, {
+        // ponytail: single retry on 429/503 honoring Retry-After (capped) —
+        // BunnyCDN throttles per-IP bursts and the first retry usually passes
+        let upstream = await fetch(upstreamUrl, {
           method: 'GET',
           headers: upstreamHeaders,
           redirect: 'follow',
           signal: controller.signal,
         })
+        if ((upstream.status === 429 || upstream.status === 503) && !controller.signal.aborted) {
+          const waitMs = retryAfterMs(upstream.headers.get('retry-after')) ?? 500
+          try {
+            await sleep(waitMs, controller.signal)
+          } catch {
+            // aborted while waiting — fall through to normal handling
+          }
+          if (!controller.signal.aborted) {
+            try {
+              await upstream.body?.cancel()
+            } catch {
+              /* ignore */
+            }
+            upstream = await fetch(upstreamUrl, {
+              method: 'GET',
+              headers: upstreamHeaders,
+              redirect: 'follow',
+              signal: controller.signal,
+            })
+          }
+        }
 
         if (upstream.status >= 500) {
           reply.code(502)
@@ -161,6 +184,11 @@ export function registerFixedProxy(app: FastifyInstance): void {
 
         const etag = upstream.headers.get('etag')
         if (etag) reply.header('ETag', etag)
+
+        const retryAfter = upstream.headers.get('retry-after')
+        if (retryAfter && (upstream.status === 429 || upstream.status === 503)) {
+          reply.header('Retry-After', retryAfter)
+        }
 
         const nodeStream = Readable.fromWeb(upstream.body as import('stream/web').ReadableStream)
         bindProxyStreamLifetime(request, nodeStream)
@@ -256,6 +284,30 @@ function requestOrigin(request: FastifyRequest): string {
 function headerValue(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0]
   return value
+}
+
+/** Parse Retry-After (seconds or HTTP-date) capped at 5s; null = absent/invalid. */
+export function retryAfterMs(value: string | null): number | null {
+  if (value == null || value.trim() === '') return null
+  const secs = Number(value.trim())
+  if (Number.isFinite(secs)) return Math.min(Math.max(secs, 0), 5) * 1000
+  const dateMs = Date.parse(value)
+  if (!Number.isNaN(dateMs)) return Math.min(Math.max(dateMs - Date.now(), 0), 5000)
+  return null
+}
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new Error('aborted'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 /** Fastify already decodes query values; tolerate raw or still-encoded input. */

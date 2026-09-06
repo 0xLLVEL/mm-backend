@@ -1,6 +1,6 @@
 import Fastify from 'fastify'
 import { describe, expect, it } from 'vitest'
-import { registerFixedProxy, rewriteManifest, sendFromPreHandler } from '../../src/proxy/fixed-proxy.js'
+import { registerFixedProxy, retryAfterMs, rewriteManifest, sendFromPreHandler } from '../../src/proxy/fixed-proxy.js'
 
 describe('sendFromPreHandler', () => {
   it('keeps preHandler pending so a competing route does not double-send', async () => {
@@ -71,6 +71,67 @@ index.m3u8
     expect(res.body).toContain('/v1/proxy?data=')
     expect(res.body).toContain('index.m3u8')
     expect(routeHits).toBe(0)
+
+    await app.close()
+    await upstream.close()
+  })
+})
+
+describe('retryAfterMs', () => {
+  it('parses seconds, caps at 5s, null when absent', () => {
+    expect(retryAfterMs('2')).toBe(2000)
+    expect(retryAfterMs('120')).toBe(5000)
+    expect(retryAfterMs(null)).toBeNull()
+    expect(retryAfterMs('')).toBeNull()
+    expect(retryAfterMs('junk')).toBeNull()
+  })
+})
+
+describe('registerFixedProxy retry', () => {
+  it('retries once after upstream 429 and serves the retry', async () => {
+    let hits = 0
+    const upstream = Fastify({ logger: false })
+    upstream.get('/video.mp4', async (_req, reply) => {
+      hits += 1
+      if (hits === 1) {
+        return reply.code(429).header('retry-after', '0').send('slow down')
+      }
+      return reply.type('video/mp4').send(Buffer.from('0123456789'.repeat(10)))
+    })
+    await upstream.listen({ port: 0, host: '127.0.0.1' })
+    const address = upstream.server.address()
+    if (!address || typeof address === 'string') throw new Error('expected TCP address')
+    const upstreamUrl = `http://127.0.0.1:${address.port}/video.mp4`
+
+    const app = Fastify({ logger: false })
+    registerFixedProxy(app)
+    await app.ready()
+    const data = encodeURIComponent(JSON.stringify({ url: upstreamUrl }))
+    const res = await app.inject({ method: 'GET', url: `/v1/proxy?data=${data}` })
+    expect(res.statusCode).toBe(200)
+    expect(hits).toBe(2)
+
+    await app.close()
+    await upstream.close()
+  })
+
+  it('forwards persistent 429 with retry-after header', async () => {
+    const upstream = Fastify({ logger: false })
+    upstream.get('/video.mp4', async (_req, reply) => {
+      return reply.code(429).header('retry-after', '1').send('slow down')
+    })
+    await upstream.listen({ port: 0, host: '127.0.0.1' })
+    const address = upstream.server.address()
+    if (!address || typeof address === 'string') throw new Error('expected TCP address')
+    const upstreamUrl = `http://127.0.0.1:${address.port}/video.mp4`
+
+    const app = Fastify({ logger: false })
+    registerFixedProxy(app)
+    await app.ready()
+    const data = encodeURIComponent(JSON.stringify({ url: upstreamUrl }))
+    const res = await app.inject({ method: 'GET', url: `/v1/proxy?data=${data}` })
+    expect(res.statusCode).toBe(429)
+    expect(res.headers['retry-after']).toBe('1')
 
     await app.close()
     await upstream.close()
