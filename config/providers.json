@@ -96,6 +96,14 @@
       }
     },
     {
+      "package": "@omss-server/vixsrc-provider",
+      "enabled": true,
+      "config": {
+        "id": "vixsrc",
+        "name": "VixSrc"
+      }
+    },
+    {
       "package": "@omss-server/videasy-provider",
       "enabled": true,
       "config": {
