@@ -106,6 +106,25 @@
       }
     },
     {
+      "package": "@omss-server/vidking-provider",
+      "enabled": true,
+      "config": {
+        "id": "vidking",
+        "name": "VidKing",
+        "maxStreams": 4,
+        "servers": ["yoru", "breach", "vyse", "fade", "omen", "raze"]
+      }
+    },
+    {
+      "package": "@omss-server/vidlink-provider",
+      "enabled": true,
+      "config": {
+        "id": "vidlink",
+        "name": "VidLink",
+        "maxStreams": 4
+      }
+    },
+    {
       "package": "@omss-server/dulo-provider",
       "enabled": true,
       "config": {
